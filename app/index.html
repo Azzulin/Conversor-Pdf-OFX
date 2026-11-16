@@ -550,34 +550,74 @@ td.deb { color: var(--debit); }
   }
 
   /* ---------- OFX ---------- */
-  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "").slice(0, 250);
+  // Texto seguro para o OFX: sem &, < e > (o Domínio não converte entidades como &amp;).
+  const esc = s => String(s).replace(/&/g, " e ").replace(/[<>"]/g, "").replace(/\s+/g, " ").trim().slice(0, 250);
 
+  // Formato no modelo aceito pelo Domínio (Thomson Reuters): cabeçalho OFX 1.02,
+  // uma tag por linha e todas as tags com fechamento (<CODE>0</CODE>).
   function gerarOfx(info, tx, saldoFinal) {
     const agora = new Date();
     const p = n => String(n).padStart(2, "0");
-    const dtServer = `${agora.getFullYear()}${p(agora.getMonth() + 1)}${p(agora.getDate())}${p(agora.getHours())}${p(agora.getMinutes())}${p(agora.getSeconds())}`;
+    const FUSO = "[-3:GMT]";
+    const dtServer = `${agora.getFullYear()}${p(agora.getMonth() + 1)}${p(agora.getDate())}${p(agora.getHours())}${p(agora.getMinutes())}${p(agora.getSeconds())}${FUSO}`;
+    const dia = d => `${d}120000${FUSO}`; // meio-dia evita troca de data por fuso
+    const tag = (nome, valor) => `<${nome}>${valor}</${nome}>`;
     const datas = tx.map(t => t.data).sort();
     const ini = info.inicio || datas[0], fim = info.fim || datas[datas.length - 1];
-    const saldo = saldoFinal ?? 0;
+    const saldo = (saldoFinal ?? 0).toFixed(2);
     const L = [
       "OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "SECURITY:NONE", "ENCODING:USASCII", "CHARSET:1252",
       "COMPRESSION:NONE", "OLDFILEUID:NONE", "NEWFILEUID:NONE", "",
-      "<OFX>", "<SIGNONMSGSRSV1><SONRS>", "<STATUS><CODE>0<SEVERITY>INFO</STATUS>",
-      `<DTSERVER>${dtServer}`, "<LANGUAGE>POR", `<FI><ORG>${esc(info.banco)}<FID>${info.bankid}</FI>`,
-      "</SONRS></SIGNONMSGSRSV1>", "<BANKMSGSRSV1><STMTTRNRS>", "<TRNUID>1",
-      "<STATUS><CODE>0<SEVERITY>INFO</STATUS>", "<STMTRS>", "<CURDEF>BRL",
-      "<BANKACCTFROM>", `<BANKID>${info.bankid}`, `<BRANCHID>${esc(info.agencia || "")}`, `<ACCTID>${esc(info.conta || "")}`,
-      "<ACCTTYPE>CHECKING", "</BANKACCTFROM>", "<BANKTRANLIST>", `<DTSTART>${ini}`, `<DTEND>${fim}`,
+      "<OFX>",
+      "<SIGNONMSGSRSV1>",
+      "<SONRS>",
+      "<STATUS>", tag("CODE", "0"), tag("SEVERITY", "INFO"), "</STATUS>",
+      tag("DTSERVER", dtServer),
+      tag("LANGUAGE", "POR"),
+      "<FI>", tag("ORG", esc(info.banco)), tag("FID", info.bankid), "</FI>",
+      "</SONRS>",
+      "</SIGNONMSGSRSV1>",
+      "<BANKMSGSRSV1>",
+      "<STMTTRNRS>",
+      tag("TRNUID", "1"),
+      "<STATUS>", tag("CODE", "0"), tag("SEVERITY", "INFO"), "</STATUS>",
+      "<STMTRS>",
+      tag("CURDEF", "BRL"),
+      "<BANKACCTFROM>",
+      tag("BANKID", info.bankid),
+      tag("BRANCHID", esc(info.agencia || "")),
+      tag("ACCTID", esc(info.conta || "")),
+      tag("ACCTTYPE", "CHECKING"),
+      "</BANKACCTFROM>",
+      "<BANKTRANLIST>",
+      tag("DTSTART", dia(ini)),
+      tag("DTEND", dia(fim)),
     ];
     const cont = {};
     for (const t of tx) {
       cont[t.data] = (cont[t.data] || 0) + 1;
       const id = t.data + String(cont[t.data]).padStart(3, "0");
-      L.push("<STMTTRN>", `<TRNTYPE>${t.valor > 0 ? "CREDIT" : "DEBIT"}`, `<DTPOSTED>${t.data}`,
-        `<TRNAMT>${t.valor.toFixed(2)}`, `<FITID>${id}`, `<CHECKNUM>${id}`, `<MEMO>${esc(t.desc)}`, "</STMTTRN>");
+      L.push(
+        "<STMTTRN>",
+        tag("TRNTYPE", t.valor > 0 ? "CREDIT" : "DEBIT"),
+        tag("DTPOSTED", dia(t.data)),
+        tag("TRNAMT", t.valor.toFixed(2)),
+        tag("FITID", id),
+        tag("CHECKNUM", id),
+        tag("MEMO", esc(t.desc) || "Lancamento"),
+        "</STMTTRN>"
+      );
     }
-    L.push("</BANKTRANLIST>", `<LEDGERBAL><BALAMT>${saldo.toFixed(2)}<DTASOF>${fim}</LEDGERBAL>`,
-      "</STMTRS>", "</STMTTRNRS></BANKMSGSRSV1>", "</OFX>", "");
+    L.push(
+      "</BANKTRANLIST>",
+      "<LEDGERBAL>", tag("BALAMT", saldo), tag("DTASOF", dia(fim)), "</LEDGERBAL>",
+      "<AVAILBAL>", tag("BALAMT", saldo), tag("DTASOF", dia(fim)), "</AVAILBAL>",
+      "</STMTRS>",
+      "</STMTTRNRS>",
+      "</BANKMSGSRSV1>",
+      "</OFX>",
+      ""
+    );
     return L.join("\r\n");
   }
 
