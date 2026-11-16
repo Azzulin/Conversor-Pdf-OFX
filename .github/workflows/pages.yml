@@ -1,9 +1,12 @@
 name: Publicar versão web
 
-# Publica o conversor no GitHub Pages (link público, sem instalação).
+# Publica o conversor no GitHub Pages (link público, sem instalação):
+# https://azzulin.github.io/Conversor-Pdf-OFX/
+# Roda a cada envio para a main, então o site acompanha sempre o código mais novo.
 # Requer Pages ativado em Settings > Pages > Source: GitHub Actions.
-# Em repositório privado, o GitHub Pages exige plano pago.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

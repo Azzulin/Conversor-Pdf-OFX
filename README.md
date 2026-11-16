@@ -83,11 +83,14 @@ A versão da tag precisa ser igual à do `package.json`. É por ela que o progra
 
 Também dá para gerar os instaladores sem criar Release: **Actions → Gerar instaladores → Run workflow**. Os arquivos ficam nos *artifacts* da execução.
 
-## Versão web (opcional)
+## Versão web (sem instalar)
 
-O workflow **Publicar versão web** coloca o conversor no GitHub Pages, com um link público que abre no navegador sem instalar nada.
-Ative em **Settings → Pages → Source: GitHub Actions** e rode o workflow em **Actions**.
-Em repositório privado, o GitHub Pages só funciona em plano pago.
+**https://azzulin.github.io/Conversor-Pdf-OFX/**
+
+O mesmo conversor, abrindo no navegador em qualquer computador: não instala nada, não precisa de conta e baixa o `.ofx` direto.
+Como não é um programa, o Windows (Smart App Control / SmartScreen) não bloqueia. É a opção indicada para computadores onde o instalador é barrado.
+
+O workflow **Publicar versão web** atualiza o site a cada envio para a `main`.
 
 ## Rodar no próprio computador (desenvolvimento)
 
