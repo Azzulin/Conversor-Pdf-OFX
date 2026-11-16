@@ -1,0 +1,32 @@
+name: Verificar
+
+# A cada envio para a main (ou pull request), compila o programa e abre de verdade
+# no Windows e no Linux para conferir se a janela principal aparece com o conversor carregado.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  teste:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run pack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Abrir o programa (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/smoke-test.js "dist/win-unpacked/Conversor de Extratos OFX.exe"
+      - name: Abrir o programa (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke-test.js dist/linux-unpacked/conversor-pdf-ofx --no-sandbox

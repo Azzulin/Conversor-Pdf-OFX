@@ -46,7 +46,21 @@ Funciona no **instalador do Windows** e no **AppImage do Linux**. A versão **po
 
 As versões são buscadas nas Releases deste repositório, que precisa ser **público**. O programa não usa nem guarda nenhum token ou senha.
 
-A atualização automática existe a partir da versão 1.1.0. Quem tem a 1.0.0 precisa instalar a 1.1.0 manualmente uma vez.
+A atualização automática existe a partir da versão 1.1.0. Quem tem a 1.0.0 precisa instalar uma versão mais nova manualmente uma vez.
+
+### Se algo der errado
+
+O programa grava o que acontece em um arquivo de registro:
+
+- **Windows:** `%APPDATA%\Conversor de Extratos OFX\registro.log` (cole esse endereço na barra do Explorador de Arquivos)
+- **Mac:** `~/Library/Application Support/Conversor de Extratos OFX/registro.log`
+- **Linux:** `~/.config/Conversor de Extratos OFX/registro.log`
+
+Esse arquivo mostra a versão instalada, o resultado da busca por atualização e qualquer erro.
+
+## Testes automáticos
+
+A cada envio para a `main`, o workflow **Verificar** compila o programa e o abre de verdade no Windows e no Linux, conferindo se a janela principal aparece com o conversor carregado. O mesmo teste roda antes de publicar uma versão: se falhar, a versão não é publicada.
 
 ## Como usar
 
@@ -95,6 +109,7 @@ app/atualizacao.html      Janela "Procurando atualizações" mostrada ao abrir
 main.js                   App desktop (janela, atualização automática e gravação dos arquivos)
 preload.js                Ponte segura entre a interface e o app
 scripts/copiar-vendor.js  Copia as bibliotecas de PDF para app/vendor
+scripts/smoke-test.js     Abre o programa compilado e confere se funcionou (usado nos testes)
 .github/workflows/        Build dos instaladores e publicação web
 ```
 

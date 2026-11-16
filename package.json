@@ -1,7 +1,7 @@
 {
   "name": "conversor-pdf-ofx",
   "productName": "Conversor de Extratos OFX",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Converte extratos bancários em PDF para OFX, com conferência de saldos.",
   "main": "main.js",
   "private": true,
@@ -10,7 +10,9 @@
   "scripts": {
     "vendor": "node scripts/copiar-vendor.js",
     "start": "npm run vendor && electron .",
-    "dist": "npm run vendor && electron-builder --publish never"
+    "dist": "npm run vendor && electron-builder --publish never",
+    "pack": "npm run vendor && electron-builder --dir --publish never",
+    "smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
     "electron-updater": "6.3.9"
@@ -61,6 +63,7 @@
     },
     "linux": {
       "target": ["AppImage"],
+      "executableName": "conversor-pdf-ofx",
       "category": "Office"
     }
   }
