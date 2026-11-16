@@ -1,0 +1,58 @@
+{
+  "name": "conversor-pdf-ofx",
+  "productName": "Conversor de Extratos OFX",
+  "version": "1.0.0",
+  "description": "Converte extratos bancários em PDF para OFX, com conferência de saldos.",
+  "main": "main.js",
+  "private": true,
+  "author": "Conversor de Extratos OFX",
+  "license": "UNLICENSED",
+  "scripts": {
+    "vendor": "node scripts/copiar-vendor.js",
+    "start": "npm run vendor && electron .",
+    "dist": "npm run vendor && electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "jszip": "3.10.1",
+    "pdfjs-dist": "3.11.174"
+  },
+  "build": {
+    "appId": "br.conversor.extratos.ofx",
+    "productName": "Conversor de Extratos OFX",
+    "artifactName": "Conversor-Extratos-OFX-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "portable": {
+      "artifactName": "Conversor-Extratos-OFX-${version}-portatil.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Conversor de Extratos OFX"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.finance"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Office"
+    }
+  }
+}

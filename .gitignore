@@ -1,0 +1,12 @@
+node_modules/
+dist/
+app/vendor/
+*.log
+.DS_Store
+Thumbs.db
+
+# Nunca versionar extratos de clientes nem credenciais
+*.pdf
+*.ofx
+*.txt
+.env
