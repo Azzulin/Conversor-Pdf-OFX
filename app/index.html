@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f6b5c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
 </head>
 <body>
 <title>Conversor de Extratos OFX</title>
@@ -786,6 +790,11 @@ td.deb { color: var(--debit); }
   $("limpar").addEventListener("click", () => { estado.length = 0; render(); });
   getDownloads();
   render();
+
+  // Versão web: guarda uma cópia para funcionar sem internet e permite instalar como programa.
+  if ("serviceWorker" in navigator && location.protocol === "https:" && !window.desktop) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
 })();
 </script>
 
