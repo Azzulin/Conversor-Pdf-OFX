@@ -35,6 +35,19 @@ O programa não tem assinatura digital paga. Por isso:
 - **Windows:** pode aparecer "O Windows protegeu o computador". Clique em **Mais informações → Executar assim mesmo**. Em máquinas com *Smart App Control* ligado, o Windows pode bloquear de vez; nesse caso use a versão web.
 - **Mac:** na primeira vez, clique com o botão direito no app → **Abrir**.
 
+## Atualização automática
+
+Sempre que o programa abre, ele procura uma versão nova por até 8 segundos:
+
+- **Tem versão nova:** baixa (mostrando o progresso), instala e reinicia sozinho. Dá para clicar em **Continuar sem esperar**; aí o download segue em segundo plano e a instalação acontece ao fechar o programa.
+- **Não tem, ou está sem internet:** abre normalmente.
+
+Funciona no **instalador do Windows** e no **AppImage do Linux**. A versão **portátil** do Windows e o **Mac** não conseguem se instalar sozinhos: eles avisam que existe versão nova e abrem a página de download.
+
+As versões são buscadas nas Releases deste repositório, que precisa ser **público**. O programa não usa nem guarda nenhum token ou senha.
+
+A atualização automática existe a partir da versão 1.1.0. Quem tem a 1.0.0 precisa instalar a 1.1.0 manualmente uma vez.
+
 ## Como usar
 
 1. Arraste um ou vários PDFs para a janela (ou clique para escolher).
@@ -50,6 +63,9 @@ O programa não tem assinatura digital paga. Por isso:
    git push origin v1.1.0
    ```
 3. A aba **Actions** gera os instaladores de Windows, Mac e Linux e cria a Release automaticamente.
+4. Na próxima vez que cada pessoa abrir o programa, ele se atualiza sozinho.
+
+A versão da tag precisa ser igual à do `package.json`. É por ela que o programa compara se há algo mais novo.
 
 Também dá para gerar os instaladores sem criar Release: **Actions → Gerar instaladores → Run workflow**. Os arquivos ficam nos *artifacts* da execução.
 
@@ -75,7 +91,8 @@ Também dá para abrir `app/index.html` direto no navegador. Sem a pasta `app/ve
 
 ```
 app/index.html            Interface e toda a lógica de leitura dos extratos
-main.js                   App desktop (janela e gravação dos arquivos)
+app/atualizacao.html      Janela "Procurando atualizações" mostrada ao abrir
+main.js                   App desktop (janela, atualização automática e gravação dos arquivos)
 preload.js                Ponte segura entre a interface e o app
 scripts/copiar-vendor.js  Copia as bibliotecas de PDF para app/vendor
 .github/workflows/        Build dos instaladores e publicação web

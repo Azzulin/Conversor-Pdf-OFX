@@ -129,7 +129,7 @@ td.deb { color: var(--debit); }
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Ferramenta contábil</div>
+    <div class="eyebrow" id="eyebrow">Ferramenta contábil</div>
     <h1>Conversor de extratos PDF para OFX</h1>
     <p class="lead">Envie o extrato em PDF baixado do internet banking. A página lê os lançamentos, confere com os saldos do próprio extrato e gera o arquivo OFX para importar no sistema contábil. O PDF é lido no seu navegador e não é enviado para nenhum servidor.</p>
     <div class="bancos" aria-label="Bancos aceitos">
@@ -753,7 +753,10 @@ td.deb { color: var(--debit); }
   }
 
   let modoZip = false;
-  if (window.desktop) $("passo3").textContent = "Escolha a pasta e os arquivos .ofx são salvos nela. É só importar no sistema.";
+  if (window.desktop) {
+    $("passo3").textContent = "Escolha a pasta e os arquivos .ofx são salvos nela. É só importar no sistema.";
+    if (window.desktop.versao) window.desktop.versao().then(v => { $("eyebrow").textContent = `Ferramenta contábil · versão ${v}`; }).catch(() => {});
+  }
   getDownloads().then(d => {
     if (!d) return;
     modoZip = true;

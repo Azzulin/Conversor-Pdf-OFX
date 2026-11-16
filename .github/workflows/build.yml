@@ -28,10 +28,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: instaladores-${{ matrix.os }}
+          # latest*.yml e .blockmap são lidos pelo programa para saber se há versão nova
           path: |
             dist/*.exe
             dist/*.dmg
+            dist/*.zip
             dist/*.AppImage
+            dist/*.blockmap
+            dist/latest*.yml
           if-no-files-found: error
 
   release:

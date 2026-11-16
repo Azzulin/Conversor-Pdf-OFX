@@ -10,3 +10,6 @@ Thumbs.db
 *.ofx
 *.txt
 .env
+
+# Configuracao local do editor/assistente
+.claude/

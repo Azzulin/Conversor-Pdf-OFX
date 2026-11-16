@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Conversor de Extratos OFX</title>
+<style>
+:root {
+  --bg: #ffffff; --ink: #17221f; --muted: #5d6b67; --line: #dde4e1;
+  --accent: #0f6b5c; --accent-ink: #ffffff; --track: #e3f1ee;
+  --font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #18211e; --ink: #e5ece9; --muted: #95a59f; --line: #2a3632; --accent: #43b39d; --accent-ink: #08130f; --track: #1d332d; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px;
+  border: 1px solid var(--line); padding: 26px 28px; display: grid; align-content: center; gap: 14px;
+  -webkit-app-region: drag; user-select: none;
+}
+.marca { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+h1 { font-size: 17px; margin: 0; font-weight: 600; }
+p { margin: 0; color: var(--muted); }
+.barra { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.barra i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.barra.indef i { width: 35%; animation: vai 1.1s ease-in-out infinite; }
+@keyframes vai { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+button {
+  -webkit-app-region: no-drag; justify-self: start; font: inherit; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 7px 14px; cursor: pointer;
+}
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .barra i { transition: none; } .barra.indef i { animation: none; width: 100%; opacity: .5; } }
+</style>
+</head>
+<body>
+  <div class="marca">Conversor de Extratos OFX</div>
+  <h1 id="titulo">Procurando atualizações…</h1>
+  <p id="detalhe">Só um instante.</p>
+  <div class="barra indef" id="barra" role="progressbar" aria-labelledby="titulo"><i id="preenche"></i></div>
+  <button type="button" id="continuar" hidden>Continuar sem esperar</button>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const atualizacao = window.desktop && window.desktop.atualizacao;
+  if (atualizacao) {
+    $("continuar").addEventListener("click", () => atualizacao.continuarSemEsperar());
+    atualizacao.aoMudar(s => {
+      if (s.fase === "baixando") {
+        $("titulo").textContent = `Baixando a versão ${s.versao}…`;
+        $("detalhe").textContent = `${s.pct || 0}% · o programa reinicia sozinho ao terminar.`;
+        $("barra").classList.remove("indef");
+        $("preenche").style.width = `${s.pct || 0}%`;
+        $("barra").setAttribute("aria-valuenow", String(s.pct || 0));
+        $("continuar").hidden = false;
+      } else if (s.fase === "instalando") {
+        $("titulo").textContent = `Instalando a versão ${s.versao}…`;
+        $("detalhe").textContent = "O programa vai reiniciar em seguida.";
+        $("barra").classList.add("indef");
+        $("continuar").hidden = true;
+      }
+    });
+  }
+</script>
+</body>
+</html>
