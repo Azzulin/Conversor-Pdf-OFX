@@ -13,6 +13,7 @@ O PDF é lido no próprio computador. Nenhum extrato é enviado para a internet.
 | Banrisul | 041 | |
 | Caixa | 104 | |
 | Banco Inter | 077 | |
+| BTG Pactual - Conta Investimento | 208 | As descrições são imagens no PDF e são lidas por OCR (confira). A agência não consta: preencher |
 | Nubank | 0260 | |
 | Sicoob | 756 | |
 | Sicredi | 748 | |
@@ -21,6 +22,8 @@ O PDF é lido no próprio computador. Nenhum extrato é enviado para a internet.
 | XP Investimentos | 102 | O extrato não traz agência: preencher se o sistema exigir |
 
 PDFs escaneados ou em imagem (por exemplo, alguns extratos do C6) não têm texto e não podem ser lidos.
+
+No **Extrato da Conta Investimento do BTG**, só datas e valores são texto; descrições e número da conta são desenhos. O programa confere datas, valores e saldos pelo texto e lê as descrições e a conta por OCR (reconhecimento de imagem), no próprio computador. Leva de 20 a 40 segundos por extrato. Sem o OCR, os lançamentos saem como "Crédito"/"Débito".
 
 ## Como baixar e instalar
 

@@ -11,6 +11,7 @@ const ARQUIVOS = [
   "./vendor/pdf.min.js",
   "./vendor/pdf.worker.min.js",
   "./vendor/jszip.min.js",
+  "./btg-investimento.js",
 ];
 
 self.addEventListener("install", (e) => {

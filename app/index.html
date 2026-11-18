@@ -141,6 +141,7 @@ td.deb { color: var(--debit); }
       <span class="chip">Banrisul</span>
       <span class="chip">Caixa</span>
       <span class="chip">Banco Inter</span>
+      <span class="chip">BTG Pactual (Conta Investimento)</span>
       <span class="chip">Nubank</span>
       <span class="chip">Sicoob</span>
       <span class="chip">Sicredi</span>
@@ -188,6 +189,7 @@ td.deb { color: var(--debit); }
       '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
   }
 </script>
+<script src="btg-investimento.js"></script>
 <script>
 (function () {
   "use strict";
@@ -654,8 +656,12 @@ td.deb { color: var(--debit); }
   async function processar(nome, buf) {
     const item = { nome, info: null, tx: [], erro: null };
     try {
+      const original = buf.slice(0); // o pdf.js pode "consumir" o buffer; o leitor do BTG lê de novo
       const texto = await extrairTexto(buf);
-      const r = lerExtrato(texto);
+      const r = window.LeitorBtgInvestimento && LeitorBtgInvestimento.reconhece(texto)
+        ? await LeitorBtgInvestimento.ler(original, msg => { $("resumo").textContent = msg; })
+        : lerExtrato(texto);
+      item.avisos = r.avisos || [];
       if (!r.tx.length) throw new Error(`Extrato do ${r.info.banco} reconhecido, mas nenhum lançamento foi encontrado. O layout deste PDF pode ser diferente do esperado.`);
       item.info = r.info; item.tx = r.tx;
       item.creditos = r.tx.filter(t => t.valor > 0).reduce((a, t) => a + t.valor, 0);
@@ -719,6 +725,7 @@ td.deb { color: var(--debit); }
           (c.diferenca ? `, diferença total de ${brl(c.diferenca)}` : "") +
           ". Costuma ser rendimento automático ou lançamento que o banco não lista. Confira antes de importar."));
       }
+      for (const av of i.avisos || []) card.append(el("div", { class: "nota" }, av));
       if (!i.info.agencia || !i.info.conta) {
         card.append(el("div", { class: "nota" }, "O extrato não informa agência e/ou conta. Preencha os campos acima antes de baixar, para o sistema reconhecer a conta."));
       }
