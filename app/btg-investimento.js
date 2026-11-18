@@ -76,7 +76,7 @@
         const [mov, saldo] = l.nums;
         if (Math.abs(r2(atual.saldo + mov.v) - saldo.v) < 0.005) {
           atual.saldo = saldo.v;
-          atual.tx.push({ data: l.data, valor: r2(mov.v), saldoApos: saldo.v, pagina: l.pagina, y: l.y, x0: l.xData + 48, x1: mov.x - 8 });
+          atual.tx.push({ data: l.data, valor: r2(mov.v), saldoApos: saldo.v, pagina: l.pagina, y: l.y, x0: l.xData + 48, x1: mov.x - 3 });
           continue;
         }
       }
@@ -142,13 +142,64 @@
     ctx.drawImage(origem, Math.round(x), Math.round(y), c.width, c.height, 0, 0, c.width, c.height);
     return c;
   }
+  // Operações que aparecem no começo da descrição; corrige 1-2 letras trocadas pelo OCR (ex.: IRRE → IRRF)
+  const OPERACOES = ["CUPOM", "IRRF", "IOF", "VENCIMENTO", "COMPRA", "VENDA", "RESGATE", "APLICAÇÃO", "TRANSFERÊNCIA", "AMORTIZAÇÃO",
+    "JUROS", "RENDIMENTO", "DIVIDENDOS", "TAXA", "TARIFA", "TED", "PIX", "LIQUIDAÇÃO", "DÉBITO", "CRÉDITO", "ESTORNO", "PAGAMENTO"];
+  function distancia(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length];
+  }
+  const semAcento = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  function corrigirOperacao(t) {
+    const m = t.match(/^(\S+)(.*)$/);
+    if (!m || OPERACOES.includes(m[1])) return t;
+    let melhor = null, md = 99;
+    for (const op of OPERACOES) {
+      const d = distancia(semAcento(m[1]), semAcento(op));
+      if (d < md) { md = d; melhor = op; }
+    }
+    return melhor && md <= (melhor.length >= 8 ? 2 : 1) ? melhor + m[2] : t;
+  }
+
   // Limpeza do OCR com erros típicos deste extrato
   function limpar(s) {
-    let t = String(s || "").replace(/[|_~`´^"]/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+    let t = String(s || "").replace(/[|_~`´^"]/g, " ").replace(/\$/g, "S").replace(/\s+/g, " ").trim().toUpperCase();
+    t = corrigirOperacao(t);
+    t = t.replace(/(\s+[^A-Z0-9\s]{1,3}|\s+[À-Ý]\.?)+$/, "").replace(/[\s.,;:-]+$/, "");  // sujeira no fim
     t = t.replace(/VENC\s*[.:,;]+\s*:?\s*/g, "VENC.: ");                 // "VENC::" / "VENC:" → "VENC.:"
     // código do título no fim (ex.: CDB7240IHKA): sem espaços; "/" e "|" no meio viram "I"
     t = t.replace(/\b(CDB|LCI|LCA|CRI|CRA|LF|DEB)\s*([0-9A-Z\/ ]{4,14})$/, (m, tipo, cod) => tipo + cod.replace(/\s+/g, "").replace(/\//g, "I"));
     return t;
+  }
+
+  // O mesmo título aparece em várias linhas (CUPOM, IRRF, VENCIMENTO) com o mesmo emissor e vencimento.
+  // O OCR às vezes troca um caractere do código em uma delas: usa a versão mais provável em todas.
+  function harmonizarCodigos(tx) {
+    const RE = /\b(CDB|LCI|LCA|CRI|CRA|LF|DEB)([0-9A-Z]{5,12})$/;
+    const chave = t => {
+      const venc = (t.desc.match(/VENC\.:\s*(\S+)/) || [])[1];
+      const emissor = (t.desc.match(/-\s*(?:CDB|LCI|LCA|CRI|CRA|LF|DEB)\s+(\S+\s+\S+)/) || [])[1];
+      return venc && emissor ? venc + "|" + emissor : null;
+    };
+    const grupos = new Map();
+    for (const t of tx) {
+      if (!t.desc || !RE.test(t.desc)) continue;
+      const k = chave(t); if (!k) continue;
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(t);
+    }
+    for (const lista of grupos.values()) {
+      if (lista.length < 2) continue;
+      const conta = new Map();
+      for (const t of lista) { const c = t.desc.match(RE)[0]; conta.set(c, (conta.get(c) || 0) + 1); }
+      // preferência: dígito logo depois do tipo (CDB1… e não CDBI…), depois a mais frequente, depois a mais curta (o OCR costuma inserir letras)
+      const melhor = [...conta.entries()].sort((a, b) =>
+        (/^[A-Z]{2,3}\d/.test(b[0]) - /^[A-Z]{2,3}\d/.test(a[0])) || b[1] - a[1] || a[0].length - b[0].length)[0][0];
+      for (const t of lista) t.desc = t.desc.replace(RE, melhor);
+    }
   }
 
   /* ---------- leitura completa ---------- */
@@ -200,6 +251,7 @@
       avisos.push("As descrições deste extrato são imagens no PDF e foram lidas por OCR. Confira se estão corretas antes de importar.");
       if (!info.conta) avisos.push("Não consegui ler o número da conta investimento. Preencha a conta antes de baixar.");
     }
+    harmonizarCodigos(mov.tx);
     for (const t of mov.tx) {
       if (!t.desc) t.desc = t.valor > 0 ? "Crédito" : "Débito";
       delete t.pagina; delete t.y; delete t.x0; delete t.x1;
