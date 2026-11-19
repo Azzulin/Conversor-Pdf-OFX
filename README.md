@@ -14,6 +14,7 @@ O PDF é lido no próprio computador. Nenhum extrato é enviado para a internet.
 | Caixa | 104 | |
 | Banco Inter | 077 | |
 | BTG Pactual - Conta Investimento | 208 | As descrições são imagens no PDF e são lidas por OCR (confira). A agência não consta: preencher |
+| iFood - Conta Digital | 595 | O extrato não traz agência. O "saldo disponível" do cabeçalho pode diferir do saldo do último dia; o OFX usa o saldo do dia |
 | Nubank | 0260 | |
 | Sicoob | 756 | |
 | Sicredi | 748 | |

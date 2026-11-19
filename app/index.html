@@ -142,6 +142,7 @@ td.deb { color: var(--debit); }
       <span class="chip">Caixa</span>
       <span class="chip">Banco Inter</span>
       <span class="chip">BTG Pactual (Conta Investimento)</span>
+      <span class="chip">iFood (Conta Digital)</span>
       <span class="chip">Nubank</span>
       <span class="chip">Sicoob</span>
       <span class="chip">Sicredi</span>
@@ -504,8 +505,43 @@ td.deb { color: var(--debit); }
     return { info, tx };
   }
 
+  /* ---------- Conta Digital iFood ---------- */
+  // O PDF lista do lançamento mais novo para o mais antigo. Cada dia termina com "Saldo do dia",
+  // que vale depois do último lançamento do dia (o primeiro listado daquele dia).
+  function lerIfood(texto) {
+    const info = novoInfo("iFood Pago", "595");
+    const m = texto.match(/^Conta\s+([\d-]+)/m); if (m) info.conta = m[1];
+    periodoBr(info, texto, /Per[ií]odo selecionado (\d{2})\/(\d{2})\/(\d{4}) a (\d{2})\/(\d{2})\/(\d{4})/);
+    const CATS = ["Compra no Débito", "Retenção de crédito", "Repasse iFood", "Antecipação", "Pix"];
+    const limpar = d => {
+      for (const c of CATS) {
+        if (!d.startsWith(c + " ")) continue;
+        const resto = d.slice(c.length + 1);
+        return resto === c || resto.split(" ")[0] === c.split(" ")[0] ? resto : `${c} - ${resto}`;
+      }
+      return d;
+    };
+    const tx = [], primeiroDoDia = {};
+    for (const l of linhasDe(texto)) {
+      let mt = l.match(/^Saldo do dia (\d{2})\/(\d{2})\/(\d{4})\s+(-?)\s?R\$\s?([\d.]+,\d{2})$/);
+      if (mt) {
+        const t = primeiroDoDia[ymd(mt[3], mt[2], mt[1])];
+        if (t) t.saldoApos = sinal(mt[4], mt[5]);
+        continue;
+      }
+      mt = l.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(.+?)\s+(-?)\s?R\$\s?([\d.]+,\d{2})$/);
+      if (!mt) continue;
+      const t = { data: ymd(mt[3], mt[2], mt[1]), desc: limpar(mt[4].trim()), valor: sinal(mt[5], mt[6]) };
+      if (!primeiroDoDia[t.data]) primeiroDoDia[t.data] = t;
+      tx.push(t);
+    }
+    tx.reverse();
+    return { info, tx };
+  }
+
   /* ---------- identificação do banco ---------- */
   const LEITORES = [
+    { nome: "iFood", teste: (c, t) => /Extrato da Conta Digital iFood/.test(c), ler: lerIfood },
     { nome: "Stone", teste: (c, t) => /Stone Institui/.test(c), ler: lerStone },
     { nome: "Sicoob", teste: (c, t) => /Sicoob \| Internet Banking|DO SICOOB - SISBR/.test(c), ler: lerSicoob },
     { nome: "Sicredi", teste: (c, t) => /^Associado:/m.test(c) && /^Cooperativa:/m.test(c), ler: lerSicredi },
