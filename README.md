@@ -13,9 +13,13 @@ O PDF é lido no próprio computador. Nenhum extrato é enviado para a internet.
 | Banrisul | 041 | |
 | Caixa | 104 | |
 | Banco Inter | 077 | |
+| C6 Bank | 336 | Só extrato em texto; PDF em imagem não é lido |
 | BTG Pactual - Conta Investimento | 208 | As descrições são imagens no PDF e são lidas por OCR (confira). A agência não consta: preencher |
 | iFood - Conta Digital | 595 | O extrato não traz agência. O "saldo disponível" do cabeçalho pode diferir do saldo do último dia; o OFX usa o saldo do dia |
+| InfinitePay - relatório de vendas | 542 | Não é extrato de conta: cada venda aprovada entra pelo valor bruto e a taxa sai separada. Conferido pelos totais do relatório. Vendas negadas ficam de fora |
 | Nubank | 0260 | |
+| PagSeguro | 290 | |
+| RecargaPay (Rec-Pay) | 000 | Código do banco não encontrado (o Domínio usa a conta escolhida na tela). O cabeçalho não soma rendimento CDI e cashback, por isso a tela pode mostrar uma diferença pequena |
 | Sicoob | 756 | |
 | Sicredi | 748 | |
 | Stone | 197 | Agência/conta podem precisar de preenchimento |

@@ -141,9 +141,13 @@ td.deb { color: var(--debit); }
       <span class="chip">Banrisul</span>
       <span class="chip">Caixa</span>
       <span class="chip">Banco Inter</span>
+      <span class="chip">C6 Bank</span>
       <span class="chip">BTG Pactual (Conta Investimento)</span>
       <span class="chip">iFood (Conta Digital)</span>
+      <span class="chip">InfinitePay (relatório de vendas)</span>
       <span class="chip">Nubank</span>
+      <span class="chip">PagSeguro</span>
+      <span class="chip">RecargaPay (Rec-Pay)</span>
       <span class="chip">Sicoob</span>
       <span class="chip">Sicredi</span>
       <span class="chip">Stone</span>
@@ -505,6 +509,173 @@ td.deb { color: var(--debit); }
     return { info, tx };
   }
 
+  /* ---------- C6 Bank ---------- */
+  // Linhas "DD/MM DD/MM Tipo Descrição Valor" (data do lançamento e data contábil) e "Saldo do dia DD/MM/AA".
+  // Usa a data contábil, que é a que fecha com o saldo do dia.
+  function lerC6(texto) {
+    const info = novoInfo("C6 Bank", "336");
+    let m = texto.match(/Ag[êe]ncia:\s*(\d+)\s*•\s*Conta:\s*([\d-]+)/); if (m) { info.agencia = m[1]; info.conta = m[2]; }
+    m = texto.match(/Per[íi]odo\s*•\s*(\d{1,2}) de (\S+) de (\d{4}) até (\d{1,2}) de (\S+) de (\d{4})/i);
+    if (m) {
+      const m1 = MESES[m[2].toLowerCase()], m2 = MESES[m[5].toLowerCase()];
+      if (m1) info.inicio = ymd(m[3], m1, m[1]);
+      if (m2) info.fim = ymd(m[6], m2, m[4]);
+    }
+    m = texto.match(/Extrato Saldo do dia\s*•[^•]*•\s*(-?)R\$\s?([\d.]+,\d{2})/);
+    if (m) info.saldo = sinal(m[1], m[2]);
+    const tx = [];
+    let ano = info.inicio ? info.inicio.slice(0, 4) : String(new Date().getFullYear()), mesAnt = 0;
+    for (const l of linhasDe(texto)) {
+      const mm = l.match(/^\S+ (\d{4}) \( \d{2}\/(\d{2})\/\d{4}/); // "Agosto 2026 ( 16/08/2026 - ..."
+      if (mm) { ano = mm[1]; continue; }
+      let mt = l.match(/^Saldo do dia (\d{2})\/(\d{2})\/(\d{2})\s+(-?)R\$\s?([\d.]+,\d{2})$/);
+      if (mt) { marcarSaldo(tx, sinal(mt[4], mt[5])); continue; }
+      mt = l.match(/^(\d{2})\/(\d{2}) (\d{2})\/(\d{2}) (.+?)\s+(-?)R\$\s?([\d.]+,\d{2})$/);
+      if (!mt) continue;
+      const mes = +mt[4];
+      if (mesAnt && mes < mesAnt && mesAnt === 12) ano = String(+ano + 1);
+      mesAnt = mes;
+      const desc = mt[5].replace(/^(Entrada|Sa[íi]da) (PIX|TED|TEF|DOC|Boleto) /i, "").replace(/^Outros gastos /i, "").trim();
+      tx.push({ data: ymd(ano, mt[4], mt[3]), desc, valor: sinal(mt[6], mt[7]) });
+    }
+    return { info, tx };
+  }
+
+  /* ---------- PagSeguro ---------- */
+  // Linhas "DD/MM/AAAA Descrição Valor" e "DD/MM/AAAA Saldo do dia Valor". Descrições longas
+  // aparecem em volta da linha do valor (uma linha antes e outra depois).
+  function lerPagSeguro(texto) {
+    const info = novoInfo("PagSeguro", "290");
+    let m = texto.match(/Ag[êe]ncia\s+(\d+)/); if (m) info.agencia = m[1];
+    m = texto.match(/^Conta\s+([\d-]+)/m); if (m) info.conta = m[1];
+    periodoBr(info, texto, /Per[ií]odo:\s*(\d{2})\/(\d{2})\/(\d{4})\s*a\s*(\d{2})\/(\d{2})\/(\d{4})/);
+    const L = linhasDe(texto);
+    const ini = L.findIndex(l => /^Data Descri[çc][ãa]o Valor$/.test(l));
+    const re = /^(\d{2})\/(\d{2})\/(\d{4})\s*(.*?)\s*(-?)R\$\s?([\d.]+,\d{2})$/;
+    const ruido = /^(Data Descri[çc][ãa]o Valor|Emitido em|P[áa]gina \d)/;
+    const tx = [], usado = new Set();
+    for (let i = ini + 1; ini >= 0 && i < L.length; i++) {
+      const mt = L[i].match(re);
+      if (!mt) continue;
+      const desc0 = mt[4].trim();
+      if (/^Saldo do dia$/i.test(desc0)) { marcarSaldo(tx, sinal(mt[5], mt[6])); continue; }
+      let desc = desc0;
+      if (!desc) {
+        const partes = [];
+        if (i - 1 > ini && !re.test(L[i - 1]) && !ruido.test(L[i - 1]) && !usado.has(i - 1)) { partes.push(L[i - 1]); usado.add(i - 1); }
+        if (i + 1 < L.length && !re.test(L[i + 1]) && !ruido.test(L[i + 1])) { partes.push(L[i + 1]); usado.add(i + 1); }
+        desc = partes.join(" ");
+      }
+      tx.push({ data: ymd(mt[3], mt[2], mt[1]), desc, valor: sinal(mt[5], mt[6]) });
+    }
+    return { info, tx };
+  }
+
+  /* ---------- InfinitePay (relatório de vendas) ---------- */
+  // Não é extrato de conta: lista as vendas com valor bruto, líquido e taxa.
+  // Cada venda aprovada vira uma entrada pelo valor bruto e a taxa vira uma saída separada.
+  // A conferência usa os totais do relatório (vendas, taxas e total a receber).
+  function lerInfinitePay(texto) {
+    const info = novoInfo("InfinitePay", "542");
+    const MES = { JAN: 1, FEV: 2, FEB: 2, MAR: 3, ABR: 4, APR: 4, MAI: 5, MAY: 5, JUN: 6, JUL: 7, AGO: 8, AUG: 8, SET: 9, SEP: 9, OUT: 10, OCT: 10, NOV: 11, DEZ: 12, DEC: 12 };
+    let m = texto.match(/(\d{2})\/(\d{2})\/(\d{4}) - (\d{2})\/(\d{2})\/(\d{4})/);
+    if (m) { info.inicio = ymd(m[3], m[2], m[1]); info.fim = ymd(m[6], m[5], m[4]); }
+    const total = (re) => { const x = texto.match(re); return x ? valor(x[1]) : null; };
+    const totVendas = total(/Total em vendas R\$\s?([\d.]+,\d{2})/);
+    const totTaxas = total(/Total em taxas aplicadas R\$\s?([\d.]+,\d{2})/);
+    const totReceber = total(/Total a receber no per[íi]odo R\$\s?([\d.]+,\d{2})/);
+
+    const reData = /(\d{2}) ([A-Za-z]{3}), (\d{4})/;
+    const meioSo = /^(Pix|D[ée]bito|Cr[ée]dito)( Maquininha)?$/;
+    const ruido = /^(Relat[óo]rio de|S[ãa]o Paulo,|Caso tenha d[úu]vidas|Total em|R\$ [\d.]+,\d{2} Vendas|Data e hora Meio|A Central de Ajuda|\d{2}\/\d{2}\/\d{4} - \d{2}\/\d{2}\/\d{4}$)/;
+    const L = linhasDe(texto).filter(l => !ruido.test(l));
+    const blocos = [];
+    for (let i = 0; i < L.length; i++) {
+      const l = L[i];
+      const inicia = meioSo.test(l) || (reData.test(l) && !(i > 0 && meioSo.test(L[i - 1])));
+      if (inicia || !blocos.length) blocos.push([]);
+      blocos[blocos.length - 1].push(l);
+    }
+    const tx = [];
+    let vendas = 0, taxas = 0;
+    for (const b of blocos) {
+      const t = b.join(" ");
+      const d = t.match(reData), st = t.match(/\b(Aprovada|Negada|Recusada|Cancelada|Estornada|Pendente|Devolvida)\b/);
+      if (!d || !st) continue;
+      if (st[1] !== "Aprovada") continue;
+      const brutoLiq = [...t.matchAll(/\+ ([\d.]+,\d{2})/g)].map(x => valor(x[1]));
+      if (!brutoLiq.length) continue;
+      const bruto = brutoLiq[0];
+      const tx_ = t.match(/R\$ - ([\d.]+,\d{2})/);
+      const taxa = tx_ ? valor(tx_[1]) : 0;
+      const meio = (t.match(/\b(Pix|D[ée]bito|Cr[ée]dito)\b/) || ["", "Venda"])[1];
+      const canal = /Maquininha/.test(t) ? "Maquininha" : /Conta Inteligente/.test(t) ? "Conta Inteligente" : "";
+      const id = (t.match(/\b(E[0-9A-Za-z]{20,}|\d{6}|[A-Z0-9]{6})\b(?= (Aprovada))/) || [])[1] || "";
+      const mes = MES[d[2].toUpperCase()];
+      if (!mes) continue;
+      const data = ymd(d[3], mes, d[1]);
+      const nome = `Venda ${meio}${canal ? " " + canal : ""}${id ? " " + id : ""}`;
+      // (a lista é invertida no fim, então a taxa entra antes para ficar depois da venda)
+      if (taxa > 0) { tx.push({ data, desc: `Taxa InfinitePay - ${meio}${id ? " " + id : ""}`, valor: -taxa }); taxas += taxa; }
+      tx.push({ data, desc: nome, valor: bruto });
+      vendas += bruto;
+    }
+    tx.reverse(); // o relatório vem do mais novo para o mais antigo
+    // Conferência pelos totais do relatório: começa em zero e termina no total a receber.
+    info.saldoInicial = 0;
+    if (totReceber != null) info.saldo = totReceber;
+    info.totaisRelatorio = { totVendas, totTaxas, totReceber, vendas: r2(vendas), taxas: r2(taxas) };
+    return { info, tx };
+  }
+
+  /* ---------- RecargaPay (Rec-Pay) ---------- */
+  // Cada movimento começa com "#ID da ordem" (a data aparece só no primeiro do dia).
+  // A descrição pode continuar na linha seguinte, junto com o valor ("+ R$" / "- R$").
+  // Atenção: o cabeçalho (Entradas / Saldo final) não soma rendimento CDI e cashback.
+  function lerRecargaPay(texto) {
+    const info = novoInfo("RecargaPay", "000");
+    periodoBr(info, texto, /Per[ií]odo:\s*(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2})\/(\d{2})\/(\d{4})/);
+    const v = (re) => { const x = texto.match(re); return x ? sinal(x[1], x[2]) : null; };
+    info.saldoInicial = v(/Saldo inicial:\s*(-?)\s?R\$\s?([\d.]+,\d{2})/);
+    info.saldo = v(/Saldo final:\s*(-?)\s?R\$\s?([\d.]+,\d{2})/);
+    const L = linhasDe(texto);
+    const empresa = L[0];
+    const ruido = /^(Se precisar de ajuda|SAC:|Emitido por|RECARGAPAY INSTITUI|CNPJ:|Data ID da Ordem|Detalhes dos movimentos|Extrato$|Per[ií]odo:|Saldo inicial:)/i;
+    const brutos = [];
+    let dentro = false, data = null, atual = null;
+    for (const l of L) {
+      if (!dentro) { dentro = /^Data ID da Ordem/i.test(l); continue; }
+      if (ruido.test(l) || l === empresa) continue;
+      let resto;
+      const m = l.match(/^(?:(\d{2})\/(\d{2})\/(\d{4}) )?#(\d+)\s*(.*)$/);
+      if (m) {
+        if (m[1]) data = ymd(m[3], m[2], m[1]);
+        atual = { data, desc: "", extra: "", valor: null, ordem: m[4] };
+        brutos.push(atual);
+        resto = m[5];
+      } else if (atual) {
+        resto = l;
+      } else continue;
+      if (!resto) continue;
+      const mv = resto.match(/^(.*?)\s*([+-])\s?R\$\s?([\d.]+,\d{2})$/);
+      if (mv && atual.valor == null) {
+        atual.desc = [atual.desc, mv[1]].filter(Boolean).join(" - ");
+        atual.valor = sinal(mv[2] === "-", mv[3]);
+      } else if (atual.valor == null) {
+        atual.desc = [atual.desc, resto].filter(Boolean).join(" - ");
+      } else {
+        atual.extra = [atual.extra, resto].filter(Boolean).join(" ");
+      }
+    }
+    const tx = brutos.filter(t => t.data && t.valor != null).map(t => ({
+      data: t.data,
+      desc: `${t.desc}${t.extra ? " - " + t.extra : ""} (#${t.ordem})`,
+      valor: t.valor,
+    }));
+    tx.reverse(); // vem do mais novo para o mais antigo
+    return { info, tx };
+  }
+
   /* ---------- Conta Digital iFood ---------- */
   // O PDF lista do lançamento mais novo para o mais antigo. Cada dia termina com "Saldo do dia",
   // que vale depois do último lançamento do dia (o primeiro listado daquele dia).
@@ -542,6 +713,10 @@ td.deb { color: var(--debit); }
   /* ---------- identificação do banco ---------- */
   const LEITORES = [
     { nome: "iFood", teste: (c, t) => /Extrato da Conta Digital iFood/.test(c), ler: lerIfood },
+    { nome: "C6 Bank", teste: (c, t) => /^Extrato exportado no dia/m.test(c) && /C6 Bank/.test(t), ler: lerC6 },
+    { nome: "PagSeguro", teste: (c, t) => /PagSeguro Internet/.test(c) && /Extrato da conta/i.test(c), ler: lerPagSeguro },
+    { nome: "RecargaPay", teste: (c, t) => /^Extrato$/m.test(c) && /RecargaPay/i.test(t) && /ID da Ordem/i.test(t), ler: lerRecargaPay },
+    { nome: "InfinitePay", teste: (c, t) => /Relat[óo]rio de (pagamentos|Vendas)/i.test(c) && /InfinitePay|Cloudwalk/i.test(t), ler: lerInfinitePay },
     { nome: "Stone", teste: (c, t) => /Stone Institui/.test(c), ler: lerStone },
     { nome: "Sicoob", teste: (c, t) => /Sicoob \| Internet Banking|DO SICOOB - SISBR/.test(c), ler: lerSicoob },
     { nome: "Sicredi", teste: (c, t) => /^Associado:/m.test(c) && /^Cooperativa:/m.test(c), ler: lerSicredi },
