@@ -6,11 +6,13 @@
 // Se as duas ficarem fechadas ao mesmo tempo, o Windows encerra o programa.
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs/promises");
 const fsSync = require("fs");
 
 const URL_RELEASES = "https://github.com/Azzulin/Conversor-Pdf-OFX/releases/latest";
+const URL_SITE = "https://azzulin.github.io/Conversor-Pdf-OFX/";
 const TEMPO_BUSCA_MS = 8000; // tempo máximo procurando atualização ao abrir
 const PRELOAD = path.join(__dirname, "preload.js");
 // Teste automático do GitHub Actions: caminho do arquivo onde gravar o resultado.
@@ -21,6 +23,7 @@ let janelaPrincipal = null;
 let telaAtualizacao = null;
 let instalando = false;
 let saindo = false;
+let pendente = null; // atualização baixada para instalar ao fechar ({ versao, instalador })
 
 /* ---------- registro de diagnóstico ---------- */
 // Grava em <dados do app>/registro.log (no Windows: %APPDATA%\Conversor de Extratos OFX\registro.log).
@@ -201,17 +204,72 @@ async function procurarVersaoNova() {
   }
 }
 
-function instalar(versao) {
+// Registro da última tentativa de instalar. Se o programa abrir de novo ainda na versão antiga,
+// a instalação falhou (ex.: o Smart App Control bloqueou o instalador sem assinatura) e
+// a mesma versão não é tentada outra vez. Isso evita o ciclo "baixa, tenta instalar, fecha".
+function arquivoTentativa() { return path.join(app.getPath("userData"), "tentativa-atualizacao.json"); }
+function lerTentativa() { try { return JSON.parse(fsSync.readFileSync(arquivoTentativa(), "utf8")); } catch { return null; } }
+function gravarTentativa(dados) { try { fsSync.writeFileSync(arquivoTentativa(), JSON.stringify(dados)); } catch { /* sem disco */ } }
+function limparTentativa() { try { fsSync.unlinkSync(arquivoTentativa()); } catch { /* não existe */ } }
+
+function quandoCarregar(win, fn) {
+  if (!win || win.isDestroyed()) return;
+  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", fn); else fn();
+}
+
+async function avisarBloqueio(win, versao) {
+  if (!win || win.isDestroyed()) return;
+  const r = await dialog.showMessageBox(win, {
+    type: "warning",
+    buttons: ["Abrir versão web", "Baixar instalador", "Fechar aviso"],
+    defaultId: 0,
+    cancelId: 2,
+    title: "Atualização bloqueada",
+    message: `Não foi possível instalar a versão ${versao} automaticamente.`,
+    detail: "O Windows impediu o instalador de rodar (geralmente o Smart App Control, que bloqueia programas sem assinatura digital). " +
+      "Você pode continuar usando esta versão, usar a versão web (sempre atualizada) ou baixar e instalar a versão nova manualmente.",
+  });
+  if (r.response === 0) shell.openExternal(URL_SITE);
+  if (r.response === 1) shell.openExternal(URL_RELEASES);
+}
+
+function falhaAoInstalar(versao, e) {
+  instalando = false;
+  registrar("erro", `o instalador da versão ${versao} não pôde ser iniciado:`, e);
+  gravarTentativa({ versao, quando: new Date().toISOString(), avisado: true });
+  const win = abrirPrincipal();
+  quandoCarregar(win, () => avisarBloqueio(win, versao));
+}
+
+// Windows: o próprio programa abre o instalador para perceber se o Windows bloquear.
+// Só fecha depois que o instalador realmente começou.
+function abrirInstalador(instalador, args, aoIniciar, aoFalhar) {
+  let filho;
+  try {
+    filho = spawn(instalador, args, { detached: true, stdio: "ignore", windowsHide: true });
+  } catch (e) { aoFalhar(e); return; }
+  filho.once("error", aoFalhar);
+  filho.once("spawn", () => { filho.unref(); aoIniciar(); });
+}
+
+function instalar(versao, instalador) {
   instalando = true;
+  pendente = null;
   enviarStatus({ fase: "instalando", versao });
   registrar("info", `instalando a versão ${versao} e reiniciando`);
+  gravarTentativa({ versao, quando: new Date().toISOString(), avisado: false });
   setTimeout(() => {
+    if (process.platform === "win32" && instalador) {
+      abrirInstalador(instalador, ["--updated", "/S", "--force-run"], () => {
+        registrar("info", "instalador iniciado; fechando para concluir a atualização");
+        setTimeout(() => app.quit(), 300);
+      }, (e) => falhaAoInstalar(versao, e));
+      return;
+    }
     try {
       autoUpdater.quitAndInstall(true, true);
     } catch (e) {
-      instalando = false;
-      registrar("erro", "falha ao instalar:", e);
-      abrirPrincipal();
+      falhaAoInstalar(versao, e);
     }
   }, 900);
 }
@@ -220,8 +278,16 @@ async function iniciar() {
   registrar("info", `iniciando versão ${app.getVersion()} (${process.platform}${process.env.PORTABLE_EXECUTABLE_DIR ? ", portátil" : ""})`);
   if (!app.isPackaged) { abrirPrincipal(); return; } // em desenvolvimento não atualiza
 
+  // Tentativa anterior concluída (já estamos na versão nova ou acima): esquece o registro.
+  const anterior = lerTentativa();
+  if (anterior && !versaoMaior(anterior.versao, app.getVersion())) {
+    registrar("info", `atualização para a versão ${anterior.versao} concluída`);
+    limparTentativa();
+  }
+
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = !SMOKE;
+  // No Windows a instalação ao fechar é feita pelo próprio programa (para detectar bloqueio).
+  autoUpdater.autoInstallOnAppQuit = !SMOKE && process.platform !== "win32";
 
   let continuou = false;
   const continuar = () => {
@@ -241,7 +307,19 @@ async function iniciar() {
 
   if (SMOKE || !instalaSozinho()) {
     const win = abrirPrincipal();
-    if (!SMOKE) win.webContents.once("did-finish-load", () => avisarVersaoNova(win, info.version));
+    if (!SMOKE) quandoCarregar(win, () => avisarVersaoNova(win, info.version));
+    return;
+  }
+
+  const tentativa = lerTentativa();
+  if (tentativa && tentativa.versao === info.version) {
+    // Já tentou instalar esta versão e não deu certo: não tenta de novo, abre normalmente.
+    registrar("aviso", `a instalação da versão ${info.version} já falhou antes; não será tentada de novo automaticamente`);
+    const win = abrirPrincipal();
+    if (!tentativa.avisado) {
+      gravarTentativa({ ...tentativa, avisado: true });
+      quandoCarregar(win, () => avisarBloqueio(win, info.version));
+    }
     return;
   }
 
@@ -250,18 +328,21 @@ async function iniciar() {
   });
   enviarStatus({ fase: "baixando", versao: info.version, pct: 0 });
 
+  let instalador = null;
   try {
-    await autoUpdater.downloadUpdate();
+    const arquivos = await autoUpdater.downloadUpdate();
+    instalador = (arquivos || []).find((f) => /\.exe$/i.test(f)) || null;
   } catch (e) {
     registrar("erro", "falha ao baixar a atualização:", e);
     abrirPrincipal();
     return;
   }
-  registrar("info", `versão ${info.version} baixada`);
+  registrar("info", `versão ${info.version} baixada${instalador ? ": " + instalador : ""}`);
 
-  if (!continuou) { instalar(info.version); return; }
+  if (!continuou) { instalar(info.version, instalador); return; }
 
   // Quem escolheu continuar sem esperar decide quando reiniciar.
+  pendente = { versao: info.version, instalador };
   const win = janelaPrincipal;
   if (!win || win.isDestroyed()) return; // será instalada ao fechar o programa
   const r = await dialog.showMessageBox(win, {
@@ -273,7 +354,7 @@ async function iniciar() {
     message: `A versão ${info.version} foi baixada.`,
     detail: "Se escolher Depois, ela será instalada quando você fechar o programa.",
   });
-  if (r.response === 0) instalar(info.version);
+  if (r.response === 0) instalar(info.version, instalador);
 }
 
 /* ---------- teste automático (GitHub Actions) ---------- */
@@ -362,6 +443,16 @@ if (!app.requestSingleInstanceLock()) {
     app.on("activate", () => garantirJanela());
   });
   app.on("before-quit", () => { saindo = true; });
+  app.on("will-quit", () => {
+    // Instalar ao fechar (Windows), quando a pessoa escolheu "Depois"
+    if (!pendente || instalando || process.platform !== "win32" || !pendente.instalador) return;
+    const { versao, instalador } = pendente;
+    pendente = null;
+    instalando = true;
+    gravarTentativa({ versao, quando: new Date().toISOString(), avisado: false });
+    registrar("info", `instalando a versão ${versao} ao fechar o programa`);
+    abrirInstalador(instalador, ["--updated", "/S"], () => {}, (e) => registrar("erro", "instalador bloqueado ao fechar:", e));
+  });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin" && !instalando) app.quit();
   });
