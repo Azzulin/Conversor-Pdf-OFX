@@ -11,7 +11,7 @@ O PDF é lido no próprio computador. Nenhum extrato é enviado para a internet.
 |---|---|---|
 | Banco do Brasil | 001 | O extrato não traz agência/conta: preencher na tela |
 | Banrisul | 041 | |
-| Caixa | 104 | |
+| Caixa | 104 | Extrato do gerenciador e extrato impresso do internet banking ("extrato_pdf") |
 | Banco Inter | 077 | |
 | C6 Bank | 336 | Só extrato em texto; PDF em imagem não é lido |
 | BTG Pactual - Conta Investimento | 208 | As descrições são imagens no PDF e são lidas por OCR (confira). A agência não consta: preencher |

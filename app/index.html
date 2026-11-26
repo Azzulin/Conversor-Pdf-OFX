@@ -256,8 +256,8 @@ td.deb { color: var(--debit); }
     let m = texto.match(/Ag[eê]ncia:\s*([\d-]+),\s*Conta:\s*([\d-]+)/i);
     if (m) { info.agencia = m[1]; info.conta = m[2]; }
     periodoBr(info, texto, /Per[ií]odo:\s*(\d{2})\/(\d{2})\/(\d{4})\s*a\s*(\d{2})\/(\d{2})\/(\d{4})/i);
-    m = texto.match(/^(-?)R\$\s?([\d.]+,\d{2})\s+R\$/m);
-    if (m) info.saldo = sinal(m[1], m[2]);
+    // (o "Saldo total" do cabeçalho é o saldo do dia em que o PDF foi emitido, não o do fim do período:
+    //  o saldo final vem do "saldo por transação" do último movimento)
     const tx = [];
     let data = null;
     for (const linha of linhasDe(texto)) {
@@ -376,6 +376,45 @@ td.deb { color: var(--debit); }
     return { info, tx };
   }
 
+  /* ---------- Caixa (extrato impresso do internet banking) ---------- */
+  // Cada movimento ocupa várias linhas:
+  //   [histórico, ex.: "DEB PIX CHAVE"]   (às vezes não vem; às vezes o histórico está na própria linha)
+  //   dd/mm/aaaa                          (data do lançamento)
+  //   doc favorecido/descrição [-] R$ valor R$ saldo C|D
+  //   dd/mm hh:mm                         (data efetiva)
+  //   [identificador do PIX: E + 31 caracteres]
+  // e "dd/mm/aaaa SALDO DIA R$ x C|D" no fim de cada dia (só informação).
+  function lerCaixaInternet(texto) {
+    const info = novoInfo("Caixa", "104");
+    let m = texto.match(/Ag[eê]ncia:\s*(\d+)\s+Conta:\s*([\d-]+)/i);
+    if (m) { info.agencia = m[1]; info.conta = m[2]; }
+    m = texto.match(/Saldo anterior ao per[ií]odo solicitado\s+R\$\s*([\d.]+,\d{2})\s*([CD])/i);
+    if (m) info.saldoInicial = sinal(m[2] === "D", m[1]);
+    periodoBr(info, texto, /per[ií]odo de (\d{2})\/(\d{2})\/(\d{4}) [àa] (\d{2})\/(\d{2})\/(\d{4})/i);
+    const tx = [];
+    let data = null, rotulo = [], tabela = false;
+    for (const l of linhasDe(texto)) {
+      if (/^Documento Hist[oó]rico Valor Saldo$/i.test(l)) { tabela = true; continue; }
+      if (!tabela) continue;
+      let mt;
+      if ((mt = l.match(/^(\d{2})\/(\d{2})\/(\d{4}) SALDO DIA\s+R\$\s*([\d.]+,\d{2})\s*([CD])$/i))) { marcarSaldo(tx, sinal(mt[5] === "D", mt[4])); rotulo = []; continue; }
+      if ((mt = l.match(/^(\d{2})\/(\d{2})\/(\d{4})$/))) { data = ymd(mt[3], mt[2], mt[1]); continue; }
+      if ((mt = l.match(/^(?:(\d{2})\/(\d{2})\/(\d{4}) )?(\d{6}) (.*?)\s*(-)?\s*R\$\s*([\d.]+,\d{2})\s+R\$\s*([\d.]+,\d{2})\s*([CD])$/))) {
+        if (mt[1]) data = ymd(mt[3], mt[2], mt[1]);
+        if (!data) continue;
+        const desc = [...new Set(rotulo), mt[5].replace(/\s*-\s*$/, "")].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+        tx.push({ data, desc: `${desc} (doc ${mt[4]})`, valor: sinal(!!mt[6], mt[7]), saldoApos: sinal(mt[9] === "D", mt[8]) });
+        rotulo = [];
+        continue;
+      }
+      if (/^\d{2}\/\d{2} \d{2}:\d{2}$/.test(l) || /^E[0-9A-Za-z]{31}$/.test(l)) continue;           // data efetiva / id do PIX
+      if (/^Data( Efetiva)?$/i.test(l) || /about:blank|extrato_pdf|^CNPJ:|^Ag[eê]ncia:/i.test(l)) continue; // cabeçalho/rodapé de página
+      if (/^SAC CAIXA|^0800|Pessoas com defici|Ouvidoria/i.test(l)) { rotulo = []; continue; }
+      if (/^[A-ZÀ-Ú0-9][A-ZÀ-Ú0-9 .,\/*&-]{1,45}$/.test(l)) rotulo.push(l);                          // histórico em linha própria
+    }
+    return { info, tx };
+  }
+
   /* ---------- Sicoob ---------- */
   function lerSicoob(texto) {
     const info = novoInfo("Sicoob", "756");
@@ -435,7 +474,8 @@ td.deb { color: var(--debit); }
     if (m) { info.agencia = m[1]; info.conta = m[2]; }
     periodoBr(info, texto, /Per[ií]odo: de (\d{2})\/(\d{2})\/(\d{4}) a (\d{2})\/(\d{2})\/(\d{4})/);
     const L = linhasDe(texto);
-    const re = /^(\d{2})\/(\d{2})\/(\d{2}) (Entrada|Sa[ií]da)\s+(-\s?)?R\$\s?([\d.]+,\d{2})\s+(-\s?)?R\$\s?([\d.]+,\d{2})\s*(.*)$/;
+    // entre o tipo e o valor pode vir texto (ex.: "Saída Tarifa - R$ 0,06" ou o fim do nome do favorecido)
+    const re = /^(\d{2})\/(\d{2})\/(\d{2}) (Entrada|Sa[ií]da)\s+(?:(.*?)\s+)?(-\s?)?R\$\s?([\d.]+,\d{2})\s+(-\s?)?R\$\s?([\d.]+,\d{2})\s*(.*)$/;
     const ruido = /^(Extrato de conta corrente|Emitido em|Per[ií]odo:|DATA TIPO|Dados da conta|Informa[çc][õo]es do Comprovante)/;
     const tx = [];
     L.forEach((l, i) => {
@@ -443,9 +483,10 @@ td.deb { color: var(--debit); }
       if (!mt) return;
       const antes = i > 0 && !re.test(L[i - 1]) && !ruido.test(L[i - 1]) ? L[i - 1] : "";
       const depois = i + 1 < L.length && !re.test(L[i + 1]) && !ruido.test(L[i + 1]) ? L[i + 1] : "";
-      const desc = [antes, depois, mt[9]].filter(Boolean).join(" - ") || mt[4];
-      const saida = /^Sa/.test(mt[4]) || !!mt[5];
-      tx.push({ data: ymd("20" + mt[3], mt[2], mt[1]), desc, valor: sinal(saida, mt[6]), saldoApos: sinal(mt[7], mt[8]) });
+      const nome = [antes, mt[5]].filter(Boolean).join(" ");
+      const desc = [nome, depois, mt[10]].filter(Boolean).join(" - ") || mt[4];
+      const saida = /^Sa/.test(mt[4]) || !!mt[6];
+      tx.push({ data: ymd("20" + mt[3], mt[2], mt[1]), desc, valor: sinal(saida, mt[7]), saldoApos: sinal(mt[8], mt[9]) });
     });
     tx.reverse();
     return { info, tx };
@@ -722,6 +763,7 @@ td.deb { color: var(--debit); }
     { nome: "Sicredi", teste: (c, t) => /^Associado:/m.test(c) && /^Cooperativa:/m.test(c), ler: lerSicredi },
     { nome: "Unicred", teste: (c, t) => /Coop:\s*\d+\s*-\s*AG:/.test(c), ler: lerUnicred },
     { nome: "Caixa", teste: (c, t) => /C:AIXA|gerenciador\.caixa/.test(c), ler: lerCaixa },
+    { nome: "Caixa (internet banking)", teste: (c, t) => /Saldo anterior ao per[ií]odo solicitado/i.test(c) && /Data Efetiva/i.test(t), ler: lerCaixaInternet },
     { nome: "Banrisul", teste: (c, t) => /B A N R I S U L/.test(c), ler: lerBanrisul },
     { nome: "XP", teste: (c, t) => /XP INVESTIMENTOS/.test(c), ler: lerXP },
     { nome: "Banco Inter", teste: (c, t) => /Institui[çc][ãa]o: Banco Inter/.test(c), ler: lerInter },
@@ -741,14 +783,18 @@ td.deb { color: var(--debit); }
 
   /* ---------- conferência de saldos ---------- */
   function conferir(info, tx) {
+    // Alguns bancos (Stone) mostram o mesmo saldo em movimentos seguidos do mesmo dia (ex.: Pix e a tarifa dele):
+    // é o saldo depois do grupo todo, então só confere no último do grupo.
+    const compartilhado = i => i + 1 < tx.length && tx[i].saldoApos != null && tx[i + 1].saldoApos === tx[i].saldoApos && tx[i + 1].data === tx[i].data;
     let si = info.saldoInicial, acc = 0;
     if (si == null) {
-      for (const t of tx) { acc += t.valor; if (t.saldoApos != null) { si = r2(t.saldoApos - acc); break; } }
+      for (let i = 0; i < tx.length; i++) { acc += tx[i].valor; if (tx[i].saldoApos != null && !compartilhado(i)) { si = r2(tx[i].saldoApos - acc); break; } }
     }
     let corrente = si, checagens = 0, falhas = 0;
-    for (const t of tx) {
+    for (let i = 0; i < tx.length; i++) {
+      const t = tx[i];
       if (corrente != null) corrente = r2(corrente + t.valor);
-      if (t.saldoApos != null) {
+      if (t.saldoApos != null && !compartilhado(i)) {
         if (corrente != null) { checagens++; if (Math.abs(corrente - t.saldoApos) > 0.005) falhas++; }
         corrente = t.saldoApos;
       }
