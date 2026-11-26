@@ -346,7 +346,7 @@ td.deb { color: var(--debit); }
       if ((m = l.match(/^\+\+ MOVIMENTOS ([A-Z]{3})\/(\d{4})/))) { mes = ABREV[m[1]]; ano = m[2]; continue; }
       if ((m = l.match(/^SALDO NA DATA\s+([\d.]+,\d{2})(-?)/))) { marcarSaldo(tx, sinal(m[2], m[1])); ultimo = null; continue; }
       if (!mes) continue;
-      if ((m = l.match(/^(?:(\d{2}) )?(.+?) (\d{6}) ([\d.]+,\d{2})(-?)$/))) {
+      if ((m = l.match(/^(?:(\d{2}) )?(.+?) ([A-Z0-9]{6}) ([\d.]+,\d{2})(-?)$/))) {  // o documento pode ter letras (códigos de PIX)
         if (m[1]) dia = m[1];
         if (!dia) continue;
         ultimo = { data: ymd(ano, mes, dia), desc: m[2].trim(), valor: sinal(m[5], m[4]) };
